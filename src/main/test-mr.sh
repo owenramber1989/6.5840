@@ -9,7 +9,6 @@
 
 if [[ "$OSTYPE" = "darwin"* ]]
 then
-  echo 'it seems that you are using a mbp'
   if go version | grep 'go1.17.[012345]'
   then
     # -race with plug-ins on x86 MacOS 12 with

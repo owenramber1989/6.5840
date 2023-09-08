@@ -1,7 +1,6 @@
 package mr
 
 import (
-	"6.5840/logger"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -41,7 +40,7 @@ func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 	ok, workerno := AskForATask(true, 1, mapf, reducef)
 	for ok {
-		logger.Debug(logger.DInfo, "Worker %d completed a task, asking for a new one", workerno)
+		// logger.Debug(logger.DInfo, "Worker %d completed a task, asking for a new one", workerno)
 		ok, workerno = AskForATask(false, workerno, mapf, reducef)
 	}
 	return

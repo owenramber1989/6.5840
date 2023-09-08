@@ -97,6 +97,7 @@ sleep 1
 
 # wait for the coordinator to exit.
 wait $pid
+wait $pid
 
 # since workers are required to exit when a job is completely finished,
 # and not before, that means the job has finished.

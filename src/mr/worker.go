@@ -1,6 +1,7 @@
 package mr
 
 import (
+	"6.5840/logger"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -12,9 +13,10 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"time"
 )
 
-// Map functions return a slice of KeyValue.
+// KeyValue Map functions return a slice of KeyValue.
 type KeyValue struct {
 	Key   string
 	Value string
@@ -26,7 +28,7 @@ func (a ByKey) Len() int           { return len(a) }
 func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
-// use ihash(key) % NReduce to choose the reduce
+// use ihash(key) % NReduce to choose to reduce
 // task number for each KeyValue emitted by Map.
 func ihash(key string) int {
 	h := fnv.New32a()
@@ -37,8 +39,9 @@ func ihash(key string) int {
 // Worker main/mrworker.go calls this function.
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
-	ok, workerno := AskForATask(true, -1, mapf, reducef)
+	ok, workerno := AskForATask(true, 1, mapf, reducef)
 	for ok {
+		// logger.Debug(logger.DInfo, "Worker %d completed a task, asking for a new one", workerno)
 		ok, workerno = AskForATask(false, workerno, mapf, reducef)
 	}
 	return
@@ -53,21 +56,32 @@ func AskForATask(init bool, workerno int, mapf func(string, string) []KeyValue,
 	}
 	args.WorkerNo = workerno
 	reply := ReplyArgs{}
-	reply.WorkerNo = -1
-	reply.TaskType = -1
+	reply.WorkerNo = 0
+	reply.TaskType = 0
 	reply.FileName = ""
-	reply.NReduce = -1
-	reply.ReduceZone = -1
+	reply.NReduce = 0
+	reply.ReduceZone = 0
+	reply.Wait = false
+	reply.Done = false
 	ok := call("Coordinator.RequestTask", &args, &reply)
 	if ok {
+		if reply.Done == true {
+			return false, -1
+		}
+		if reply.Wait == true {
+			time.Sleep(time.Millisecond * 10)
+			return true, workerno
+		}
+		// logger.Debug(logger.DInfo, "The reply.TaskType is %d", reply.TaskType)
 		if reply.TaskType == 0 {
 			DoMap(reply.FileName, reply.WorkerNo, reply.NReduce, mapf)
-		} else {
+		}
+		if reply.TaskType == 1 {
 			DoReduce(reducef, reply.WorkerNo, reply.ReduceZone)
 		}
 		return true, reply.WorkerNo
 	} else {
-		fmt.Printf("Failed to call Coordinator.RequestTask\n")
+		// logger.Debug(logger.DError, "Worker %d failed to request for a task", args.WorkerNo)
 		return false, reply.WorkerNo
 	}
 }
@@ -88,7 +102,7 @@ func DoMap(filename string, workerno int, nreduce int, mapf func(string, string)
 	sort.Sort(ByKey(kva))
 	for _, kv := range kva {
 		r := ihash(kv.Key) % nreduce
-		filename := fmt.Sprintf("mr-%d-%d.txt", workerno, r)
+		filename := fmt.Sprintf("mr-%d-%d", workerno, r)
 		file, err := os.OpenFile(filename, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0755)
 		if err != nil {
 			fmt.Println("Error:", err)
@@ -131,12 +145,15 @@ func DoReduce(reducef func(string, []string) string, workerno int, reducezone in
 					}
 					intermediate = append(intermediate, kv)
 				}
+				file.Close()
 			}
 		}
 	}
-	oname := "mr-out-" + strconv.Itoa(workerno)
-	tname := "TempReduce" + strconv.Itoa(reducezone)
-	ofile, _ := os.CreateTemp("", tname)
+	sort.Sort(ByKey(intermediate))
+	logger.Debug(logger.DInfo, "The assigned reduce zone is #%d zone", reducezone)
+	oname := "mr-out-" + strconv.Itoa(reducezone)
+	// tname := "TempReduce" + strconv.Itoa(reducezone)
+	ofile, _ := os.Create(oname)
 	i := 0
 	for i < len(intermediate) {
 		j := i + 1
@@ -150,14 +167,7 @@ func DoReduce(reducef func(string, []string) string, workerno int, reducezone in
 		output := reducef(intermediate[i].Key, values)
 
 		// this is the correct format for each line of Reduce output.
-		_, err := fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
-		if err != nil {
-			return
-		}
-		err = os.Rename(tname, oname)
-		if err != nil {
-			return
-		}
+		fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
 		i = j
 	}
 	err = ofile.Close()
@@ -182,12 +192,10 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 			fmt.Println(err)
 		}
 	}(c)
-
 	err = c.Call(rpcname, args, reply)
 	if err == nil {
 		return true
 	}
-
 	fmt.Println(err)
 	return false
 }

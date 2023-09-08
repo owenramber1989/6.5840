@@ -27,6 +27,8 @@ type ReplyArgs struct {
 	FileName   string
 	NReduce    int
 	ReduceZone int
+	Done       bool
+	Wait       bool
 }
 
 // Add your RPC definitions here.

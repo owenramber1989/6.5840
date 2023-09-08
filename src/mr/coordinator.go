@@ -1,6 +1,7 @@
 package mr
 
 import (
+	"6.5840/logger"
 	"fmt"
 	"log"
 	"net"
@@ -55,6 +56,7 @@ func (c *Coordinator) Timer(WorkerNo int) {
 	if c.WorkersInfo[WorkerNo].Status == 1 {
 		return
 	}
+	logger.Debug(logger.DInfo, "Worker #%d was regarded as dead", WorkerNo)
 	c.WorkersInfo[WorkerNo].Status = 2
 	c.HandleFailures(WorkerNo)
 }
@@ -88,56 +90,87 @@ func (c *Coordinator) HandleFailures(WorkerNo int) {
 func (c *Coordinator) RequestTask(args *RequestArgs, reply *ReplyArgs) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if args.Finished == 0 {
-		if c.Stage == 0 {
-			reply.TaskType = 0
-			reply.NReduce = c.NReduces
-			reply.FileName = c.SplitFiles[0]
-			c.SplitFiles = c.SplitFiles[1:]
-			c.WorkersInfo[c.WorkerNo].TaskType = 0
-			c.WorkersInfo[c.WorkerNo].FileName = reply.FileName
-		} else {
-			reply.TaskType = 1
-			for _, rdzone := range c.Reduced {
-				if rdzone == 0 || rdzone == 2 {
-					reply.ReduceZone = rdzone
-				}
-			}
-			c.WorkersInfo[c.WorkerNo].TaskType = 1
-			c.WorkersInfo[c.WorkerNo].ReduceZone = reply.ReduceZone
-		}
-		reply.WorkerNo = c.WorkerNo
-		c.WorkerNo++
-		c.WorkersInfo[reply.WorkerNo].WorkerNo = reply.WorkerNo
-		c.WorkersInfo[reply.WorkerNo].Status = -1
-		go c.Timer(reply.WorkerNo)
-	} else {
+	if args.Finished == 1 {
 		c.WorkersInfo[args.WorkerNo].Status = 1
 		c.FinishTask(args.WorkerNo)
 	}
+	if len(c.SplitFiles) == 0 && c.Stage == 0 {
+		// logger.Debug(logger.DWarn, "Refuse to assign tasks, waiting for the rest of the map tasks")
+		reply.Wait = true
+		return nil
+	}
+	if c.Stage == 2 {
+		// logger.Debug(logger.DInfo, "We finished all the tasks")
+		reply.Done = true
+		return nil
+	}
+
+	c.AssignTask(reply)
 	return nil
 }
 
+func (c *Coordinator) AssignTask(reply *ReplyArgs) {
+
+	if c.Stage == 0 {
+		reply.TaskType = 0
+		reply.NReduce = c.NReduces
+		reply.FileName = c.SplitFiles[0]
+		c.SplitFiles = c.SplitFiles[1:]
+		c.WorkersInfo[c.WorkerNo].TaskType = 0
+		c.WorkersInfo[c.WorkerNo].FileName = reply.FileName
+	} else {
+		reply.TaskType = 1
+		find := false
+		for i, rdzone := range c.Reduced {
+			if rdzone == 0 || rdzone == 2 {
+				reply.ReduceZone = i
+				// logger.Debug(logger.DInfo, "The coordinator assigned worker the #%d reduce zone", reply.ReduceZone)
+				c.Reduced[i] = 1
+				find = true
+				break
+			}
+		}
+		if !find {
+			reply.Done = true
+			return
+		}
+		c.WorkersInfo[c.WorkerNo].TaskType = 1
+		c.WorkersInfo[c.WorkerNo].ReduceZone = reply.ReduceZone
+	}
+	reply.Done = false
+	reply.Wait = false
+	reply.WorkerNo = c.WorkerNo
+	// logger.Debug(logger.DInfo, "Assigned a new task, the worker no is %d", reply.WorkerNo)
+	c.WorkerNo++
+	c.WorkersInfo[reply.WorkerNo].WorkerNo = reply.WorkerNo
+	c.WorkersInfo[reply.WorkerNo].Status = 0
+	go c.Timer(reply.WorkerNo)
+}
 func (c *Coordinator) FinishTask(workno int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.WorkersInfo[workno].TaskType == 0 {
 		c.NumMaps -= 1
+		// logger.Debug(logger.DInfo, "%d map tasks remained.", c.NumMaps)
 	} else {
 		c.NumReduces -= 1
+		// logger.Debug(logger.DInfo, "%d reduce tasks remained.", c.NumReduces)
 	}
-	if c.NumMaps == 0 {
+	c.WorkersInfo[workno].Status = 1
+	if c.NumMaps <= 0 {
 		c.Stage = 1
+		// logger.Debug(logger.DInfo, "Map tasks completed, moved into reduce phase")
 	}
-	if c.NumReduces == 0 {
+	if c.NumReduces <= 0 {
 		c.Stage = 2
+		// logger.Debug(logger.DInfo, "Reduce tasks completed, end of system")
 	}
 	return
 }
 
 func (c *Coordinator) Done() bool {
-	ret := c.Stage > 1
-	return ret
+	if c.Stage > 1 {
+		return true
+	}
+	return false
 }
 
 // MakeCoordinator create a Coordinator.
@@ -149,11 +182,14 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c.SplitFiles = files
 	c.NumMaps = len(files)
 	c.NumReduces = nReduce
+	c.Reduced = make([]int, nReduce)
 	for i := 0; i < nReduce; i++ {
 		c.Reduced[i] = 0
 	}
+	c.WorkersInfo = make([]WorkerInfo, 100)
 	c.NReduces = nReduce
-	c.WorkerNo = 0
+	c.WorkerNo = 1
+	logger.Debug(logger.DInfo, "The coordinator has %d splits and %d reduce zones", c.NumMaps, c.NReduces)
 	c.server()
 	return &c
 }

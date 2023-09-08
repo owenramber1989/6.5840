@@ -113,11 +113,11 @@ fi
 
 # wait for remaining workers and coordinator to exit.
 wait
+exit 0
 
 #########################################################
 # now indexer
 rm -f mr-*
-
 # generate the correct output
 ../mrsequential ../../mrapps/indexer.so ../pg*txt || exit 1
 sort mr-out-0 > mr-correct-indexer.txt

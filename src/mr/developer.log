@@ -1,0 +1,3 @@
+1. 2023-09-08 19:46 Currently after all splits been assigned, the worker request for a task will be refused to get task all over
+the procedure. And they will ask for a new task even after the whole procedure.
+2. And reduce phase does not produce data correctly.

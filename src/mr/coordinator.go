@@ -130,7 +130,7 @@ func (c *Coordinator) AssignTask(reply *ReplyArgs) {
 			}
 		}
 		if !find {
-			reply.Done = true
+			reply.Wait = true
 			return
 		}
 		c.WorkersInfo[c.WorkerNo].TaskType = 1

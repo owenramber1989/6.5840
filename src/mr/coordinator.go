@@ -90,17 +90,17 @@ func (c *Coordinator) HandleFailures(WorkerNo int) {
 func (c *Coordinator) RequestTask(args *RequestArgs, reply *ReplyArgs) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if args.Finished == 1 {
+	if args.Finished == 1 && c.WorkersInfo[args.WorkerNo].Status == 0 {
 		c.WorkersInfo[args.WorkerNo].Status = 1
 		c.FinishTask(args.WorkerNo)
 	}
 	if len(c.SplitFiles) == 0 && c.Stage == 0 {
-		// logger.Debug(logger.DWarn, "Refuse to assign tasks, waiting for the rest of the map tasks")
+		logger.Debug(logger.DWarn, "Refuse to assign tasks, waiting for the rest of the map tasks")
 		reply.Wait = true
 		return nil
 	}
 	if c.Stage == 2 {
-		// logger.Debug(logger.DInfo, "We finished all the tasks")
+		logger.Debug(logger.DInfo, "We finished all the tasks")
 		reply.Done = true
 		return nil
 	}
@@ -140,7 +140,7 @@ func (c *Coordinator) AssignTask(reply *ReplyArgs) {
 	reply.Done = false
 	reply.Wait = false
 	reply.WorkerNo = c.WorkerNo
-	// logger.Debug(logger.DInfo, "Assigned a new task, the worker no is %d", reply.WorkerNo)
+	logger.Debug(logger.DInfo, "Assigned a new task, the worker no is %d", reply.WorkerNo)
 	c.WorkerNo++
 	c.WorkersInfo[reply.WorkerNo].WorkerNo = reply.WorkerNo
 	c.WorkersInfo[reply.WorkerNo].Status = 0
@@ -149,19 +149,19 @@ func (c *Coordinator) AssignTask(reply *ReplyArgs) {
 func (c *Coordinator) FinishTask(workno int) {
 	if c.WorkersInfo[workno].TaskType == 0 {
 		c.NumMaps -= 1
-		// logger.Debug(logger.DInfo, "%d map tasks remained.", c.NumMaps)
+		logger.Debug(logger.DInfo, "%d map tasks remained.", c.NumMaps)
 	} else {
 		c.NumReduces -= 1
-		// logger.Debug(logger.DInfo, "%d reduce tasks remained.", c.NumReduces)
+		logger.Debug(logger.DInfo, "%d reduce tasks remained.", c.NumReduces)
 	}
 	c.WorkersInfo[workno].Status = 1
-	if c.NumMaps <= 0 {
+	if c.NumMaps == 0 {
 		c.Stage = 1
-		// logger.Debug(logger.DInfo, "Map tasks completed, moved into reduce phase")
+		logger.Debug(logger.DInfo, "Map tasks completed, moved into reduce phase")
 	}
 	if c.NumReduces <= 0 {
 		c.Stage = 2
-		// logger.Debug(logger.DInfo, "Reduce tasks completed, end of system")
+		logger.Debug(logger.DInfo, "Reduce tasks completed, end of system")
 	}
 	return
 }
@@ -189,7 +189,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c.WorkersInfo = make([]WorkerInfo, 100)
 	c.NReduces = nReduce
 	c.WorkerNo = 1
-	logger.Debug(logger.DInfo, "The coordinator has %d splits and %d reduce zones", c.NumMaps, c.NReduces)
+	// logger.Debug(logger.DInfo, "The coordinator has %d splits and %d reduce zones", c.NumMaps, c.NReduces)
 	c.server()
 	return &c
 }

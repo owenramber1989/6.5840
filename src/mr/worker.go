@@ -41,7 +41,7 @@ func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 	ok, workerno := AskForATask(true, 1, mapf, reducef)
 	for ok {
-		// logger.Debug(logger.DInfo, "Worker %d completed a task, asking for a new one", workerno)
+		logger.Debug(logger.DInfo, "Worker %d completed a task, asking for a new one", workerno)
 		ok, workerno = AskForATask(false, workerno, mapf, reducef)
 	}
 	return
@@ -69,7 +69,7 @@ func AskForATask(init bool, workerno int, mapf func(string, string) []KeyValue,
 			return false, -1
 		}
 		if reply.Wait == true {
-			time.Sleep(time.Millisecond * 10)
+			time.Sleep(time.Second)
 			return true, workerno
 		}
 		// logger.Debug(logger.DInfo, "The reply.TaskType is %d", reply.TaskType)
@@ -150,7 +150,7 @@ func DoReduce(reducef func(string, []string) string, workerno int, reducezone in
 		}
 	}
 	sort.Sort(ByKey(intermediate))
-	logger.Debug(logger.DInfo, "The assigned reduce zone is #%d zone", reducezone)
+	// logger.Debug(logger.DInfo, "The assigned reduce zone is #%d zone", reducezone)
 	oname := "mr-out-" + strconv.Itoa(reducezone)
 	// tname := "TempReduce" + strconv.Itoa(reducezone)
 	ofile, _ := os.Create(oname)
